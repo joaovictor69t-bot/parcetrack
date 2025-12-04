@@ -1,22 +1,37 @@
 import { User, UserRole, WorkRecord } from '../types';
 
-const USERS_KEY = 'pt_users';
-const RECORDS_KEY = 'pt_records';
+// Bumped version to clear old seeded users from localStorage
+const USERS_KEY = 'pt_users_v2';
+const RECORDS_KEY = 'pt_records_v2';
 
 // Admin credentials (In a real app, these are on the server, never in client code)
-// We keep them here to simulate backend validation, but removed from the UI component.
 const ADMIN_HASH = 'EVRI01'; 
 const ADMIN_USER = 'admin';
+
+// Helper for generating IDs safely (prevents white screen on non-secure contexts)
+export const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    try {
+      return crypto.randomUUID();
+    } catch (e) {
+      // Fallback if randomUUID fails
+    }
+  }
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+};
 
 // Initial Seed Data
 const seedUsers = () => {
   if (!localStorage.getItem(USERS_KEY)) {
-    // Note: Storing passwords in plain text in localStorage is NOT secure for production.
-    // This is strictly for the offline demo functionality requested.
-    const admin: User = { id: 'admin-1', username: 'admin', password: ADMIN_HASH, name: 'Administrador', role: UserRole.ADMIN };
-    const user1: User = { id: 'user-1', username: 'motorista1', password: '123', name: 'João Silva', role: UserRole.USER };
-    const user2: User = { id: 'user-2', username: 'motorista2', password: '123', name: 'Maria Santos', role: UserRole.USER };
-    localStorage.setItem(USERS_KEY, JSON.stringify([admin, user1, user2]));
+    // Only Admin seeded now. "João Silva" and "Maria Santos" removed as requested.
+    const admin: User = { 
+      id: 'admin-1', 
+      username: 'admin', 
+      password: ADMIN_HASH, 
+      name: 'Administrador', 
+      role: UserRole.ADMIN 
+    };
+    localStorage.setItem(USERS_KEY, JSON.stringify([admin]));
   }
 };
 
@@ -32,7 +47,6 @@ export const StorageService = {
     return users.find(u => u.username.toLowerCase() === username.toLowerCase());
   },
 
-  // New: Handle Authentication internally
   authenticate: (username: string, passwordInput: string): { success: boolean; user?: User; message?: string } => {
     const users = StorageService.getUsers();
     const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
@@ -41,17 +55,14 @@ export const StorageService = {
       return { success: false, message: 'Usuário não encontrado.' };
     }
 
-    // Check password
-    // For admin, we strictly check the specific credential
     if (user.role === UserRole.ADMIN) {
-      if (passwordInput === ADMIN_HASH) { // Checking against "backend" constant
+      if (passwordInput === ADMIN_HASH) {
         return { success: true, user };
       } else {
         return { success: false, message: 'Credenciais de administrador inválidas.' };
       }
     }
 
-    // For regular users
     if (user.password === passwordInput) {
        return { success: true, user };
     }
@@ -59,7 +70,6 @@ export const StorageService = {
     return { success: false, message: 'Senha incorreta.' };
   },
 
-  // New: Register User
   registerUser: (name: string, username: string, password: string): { success: boolean; user?: User; message?: string } => {
     const users = StorageService.getUsers();
     
@@ -68,10 +78,10 @@ export const StorageService = {
     }
 
     const newUser: User = {
-      id: crypto.randomUUID(),
+      id: generateUUID(),
       name,
       username,
-      password, // In real app: bcrypt.hash(password)
+      password,
       role: UserRole.USER
     };
 
@@ -102,7 +112,6 @@ export const StorageService = {
     localStorage.setItem(RECORDS_KEY, JSON.stringify(filtered));
   },
 
-  // Export helper
   exportToCSV: (records: WorkRecord[]): string => {
     const headers = ['Data', 'Usuario', 'Modo', 'ID Rota', 'Qtd', 'Valor (£)', 'Criado Em'];
     const rows = records.map(r => [

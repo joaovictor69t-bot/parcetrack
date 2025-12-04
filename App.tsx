@@ -1,11 +1,50 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { UserRole, RecordMode, IndividualType, User, WorkRecord, AuthState, Photo } from './types';
-import { StorageService } from './services/storage';
+import { StorageService, generateUUID } from './services/storage';
 import { calculateEarnings, formatCurrency } from './services/calculator';
 import { 
   PlusIcon, HistoryIcon, TrashIcon, CameraIcon, 
   DownloadIcon, LogoutIcon, ChevronLeftIcon, XIcon
 } from './components/Icons';
+
+/* --- ERROR BOUNDARY (Fixes White Screen) --- */
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: Error | null}> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: any) {
+    console.error("App Crash:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-6 text-center">
+          <div className="bg-white p-6 rounded-xl shadow-xl border border-gray-100 max-w-sm w-full">
+            <h2 className="text-xl font-bold text-red-600 mb-2">Ops! Algo deu errado.</h2>
+            <p className="text-gray-600 mb-4 text-sm">O aplicativo encontrou um erro inesperado.</p>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="w-full bg-brand-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-brand-500/30"
+            >
+              Reiniciar Aplicativo
+            </button>
+            <div className="mt-4 p-2 bg-gray-100 rounded text-left overflow-hidden">
+               <p className="text-xs text-gray-500 font-mono truncate">{this.state.error?.message}</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 /* --- HELPER COMPONENTS --- */
 
@@ -47,40 +86,33 @@ const Input = ({ label, ...props }: React.InputHTMLAttributes<HTMLInputElement> 
 
 /* --- SCREENS --- */
 
-// 1. LOGIN SCREEN (Refactored)
+// 1. LOGIN SCREEN
 const LoginScreen = ({ onLogin }: { onLogin: (u: User) => void }) => {
   const [activeTab, setActiveTab] = useState<'DRIVER' | 'ADMIN'>('DRIVER');
   const [isRegistering, setIsRegistering] = useState(false);
   
-  // Form States
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState(''); // For registration
+  const [fullName, setFullName] = useState('');
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   const resetForm = () => {
     setUsername('');
     setPassword('');
     setFullName('');
     setError('');
-    setSuccessMsg('');
   };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     
-    // Use StorageService for authentication logic to hide credentials from UI code
     const result = StorageService.authenticate(username, password);
     
     if (result.success && result.user) {
       if (activeTab === 'ADMIN' && result.user.role !== UserRole.ADMIN) {
         setError('Esta conta não possui privilégios de administrador.');
         return;
-      }
-      if (activeTab === 'DRIVER' && result.user.role === UserRole.ADMIN) {
-        // Optional: Redirect admins to admin tab or just allow
       }
       onLogin(result.user);
     } else {
@@ -108,12 +140,11 @@ const LoginScreen = ({ onLogin }: { onLogin: (u: User) => void }) => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center p-6">
       <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-brand-600 mb-2 tracking-tight">ParcelTrack</h1>
+        <h1 className="text-4xl font-bold text-brand-600 mb-2 tracking-tight">PayLoad</h1>
         <p className="text-gray-500">Controle de ganhos para motoristas</p>
       </div>
 
       <Card className="p-0 overflow-hidden">
-        {/* TABS */}
         <div className="flex border-b border-gray-100">
           <button 
             onClick={() => { setActiveTab('DRIVER'); setIsRegistering(false); resetForm(); }}
@@ -235,9 +266,8 @@ const LoginScreen = ({ onLogin }: { onLogin: (u: User) => void }) => {
         </div>
       </Card>
       
-      {/* Footer removed to hide exposed credentials */}
       <div className="mt-8 text-center text-xs text-gray-300">
-        v1.0.3
+        v1.0.4
       </div>
     </div>
   );
@@ -248,20 +278,16 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
   const [mode, setMode] = useState<RecordMode>(RecordMode.INDIVIDUAL);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   
-  // IDs
   const [idField, setIdField] = useState('');
-  const [idField2, setIdField2] = useState(''); // Second ID field for "2 IDs" mode
+  const [idField2, setIdField2] = useState('');
   const [areaIds, setAreaIds] = useState<number>(1);
   
-  // Quantities - Now split for Individual mode
-  const [qtyParcel, setQtyParcel] = useState<string>(''); // Used for 'Parcela' in Individual AND 'Total' in Daily
-  const [qtyCollection, setQtyCollection] = useState<string>(''); // Used only for 'Coleta' in Individual
+  const [qtyParcel, setQtyParcel] = useState<string>(''); 
+  const [qtyCollection, setQtyCollection] = useState<string>(''); 
 
-  // Photos
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [preview, setPreview] = useState<number>(0);
 
-  // Calculate preview effect
   useEffect(() => {
     let totalVal = 0;
 
@@ -274,7 +300,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
       
       totalVal = resP.value + resC.value;
     } else {
-      // Daily Mode uses qtyParcel as the main quantity input
       const q = parseInt(qtyParcel) || 0;
       const res = calculateEarnings(RecordMode.AREA, q, undefined, areaIds);
       totalVal = res.value;
@@ -289,7 +314,7 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotos([...photos, {
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           dataUrl: reader.result as string,
           timestamp: Date.now()
         }]);
@@ -301,7 +326,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Combine IDs if using multiple
     let finalIdField = idField;
     if (mode === RecordMode.AREA && areaIds === 2 && idField2) {
       finalIdField = `${idField} + ${idField2}`;
@@ -309,7 +333,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
 
     if (!finalIdField) return;
 
-    // Common data for record(s)
     const baseRecord = {
       userId: user.id,
       userName: user.name,
@@ -320,7 +343,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
     };
 
     if (mode === RecordMode.AREA) {
-      // DAILY Mode
       const qty = parseInt(qtyParcel);
       if (!qty) return;
 
@@ -328,7 +350,7 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
       
       StorageService.addRecord({
         ...baseRecord,
-        id: crypto.randomUUID(),
+        id: generateUUID(),
         mode: RecordMode.AREA,
         areaIdCount: areaIds,
         quantity: qty,
@@ -336,18 +358,16 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
       });
 
     } else {
-      // INDIVIDUAL Mode - Can submit Parcel AND/OR Collection
       const p = parseInt(qtyParcel) || 0;
       const c = parseInt(qtyCollection) || 0;
 
       if (p === 0 && c === 0) return;
 
-      // Create Parcel Record if needed
       if (p > 0) {
         const calcP = calculateEarnings(RecordMode.INDIVIDUAL, p, IndividualType.PARCEL);
         StorageService.addRecord({
           ...baseRecord,
-          id: crypto.randomUUID(),
+          id: generateUUID(),
           mode: RecordMode.INDIVIDUAL,
           individualType: IndividualType.PARCEL,
           quantity: p,
@@ -355,12 +375,11 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
         });
       }
 
-      // Create Collection Record if needed
       if (c > 0) {
         const calcC = calculateEarnings(RecordMode.INDIVIDUAL, c, IndividualType.COLLECTION);
         StorageService.addRecord({
           ...baseRecord,
-          id: crypto.randomUUID(), // New ID
+          id: generateUUID(),
           mode: RecordMode.INDIVIDUAL,
           individualType: IndividualType.COLLECTION,
           quantity: c,
@@ -381,7 +400,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-6">
         
-        {/* MODE SELECTOR */}
         <div className="grid grid-cols-2 gap-3">
           <button 
             type="button"
@@ -399,11 +417,9 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
           </button>
         </div>
 
-        {/* FIELDS */}
         <Card className="flex flex-col gap-4">
           <Input label="Data" type="date" value={date} onChange={e => setDate(e.target.value)} required />
           
-          {/* MOVED UP: Quantidade de IDs selector (Only for Daily) */}
           {mode === RecordMode.AREA && (
             <div className="flex flex-col gap-1 mb-2">
               <label className="text-sm font-medium text-gray-600 ml-1">Quantidade de IDs</label>
@@ -426,7 +442,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
             </div>
           )}
 
-          {/* DYNAMIC ID FIELDS */}
           {mode === RecordMode.AREA && areaIds === 2 ? (
             <>
               <Input label="ID da Rota 1" placeholder="Ex: Rota-A" value={idField} onChange={e => setIdField(e.target.value)} required />
@@ -436,7 +451,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
             <Input label="ID da Rota" placeholder="Ex: Rota-123" value={idField} onChange={e => setIdField(e.target.value)} required />
           )}
 
-          {/* QUANTITY FIELDS - SPLIT FOR INDIVIDUAL */}
           {mode === RecordMode.INDIVIDUAL ? (
             <div className="flex flex-col gap-4">
               <Input 
@@ -457,7 +471,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
               />
             </div>
           ) : (
-            // DAILY MODE (Only shows Parcel Quantity)
             <Input 
               label="Qtd. Parcelas" 
               type="number" 
@@ -471,7 +484,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
 
         </Card>
 
-        {/* PHOTOS */}
         <Card>
           <div className="flex items-center justify-between mb-4">
             <label className="text-sm font-medium text-gray-600">Fotos / Comprovantes</label>
@@ -504,7 +516,6 @@ const NewRecordScreen = ({ user, onCancel, onSave }: { user: User, onCancel: () 
           )}
         </Card>
 
-        {/* FOOTER PREVIEW & ACTION */}
         <div className="fixed bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-100 shadow-xl pb-6">
            <div className="flex items-center justify-between mb-3 px-1">
              <span className="text-gray-500 font-medium">Ganho Estimado:</span>
@@ -535,11 +546,10 @@ const HistoryScreen = ({
   const [expandedRecord, setExpandedRecord] = useState<string | null>(null);
   const [viewPhoto, setViewPhoto] = useState<string | null>(null);
 
-  // Group by month
   const grouped = useMemo(() => {
     const g: Record<string, { total: number, items: WorkRecord[] }> = {};
     records.forEach(r => {
-      const monthKey = r.date.substring(0, 7); // YYYY-MM
+      const monthKey = r.date.substring(0, 7); 
       if (!g[monthKey]) g[monthKey] = { total: 0, items: [] };
       g[monthKey].items.push(r);
       g[monthKey].total += r.calculatedValue;
@@ -563,7 +573,6 @@ const HistoryScreen = ({
 
   return (
     <div className="p-4 pb-20">
-      {/* PHOTO MODAL */}
       {viewPhoto && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
            <button 
@@ -643,7 +652,6 @@ const HistoryScreen = ({
                        </div>
                      </div>
 
-                     {/* Expanded Details */}
                      {expandedRecord === record.id && (
                        <div className="mt-4 pt-4 border-t border-gray-100 animate-in fade-in zoom-in-95 duration-200">
                           <div className="flex justify-between items-end">
@@ -760,40 +768,33 @@ const AdminDashboard = ({
 }
 
 // 5. MAIN APP CONTAINER
-export default function App() {
+function AppContent() {
   const [auth, setAuth] = useState<AuthState>({ user: null, isAuthenticated: false });
   const [view, setView] = useState<'DASHBOARD' | 'NEW_RECORD' | 'HISTORY' | 'ADMIN_USER_VIEW'>('DASHBOARD');
   
-  // Data State
   const [myRecords, setMyRecords] = useState<WorkRecord[]>([]);
   const [adminSelectedUser, setAdminSelectedUser] = useState<User | null>(null);
 
-  // Stats for Dashboard
   const [currentMonthStats, setCurrentMonthStats] = useState({ total: 0, average: 0 });
 
-  // Load records on auth change or view change
   useEffect(() => {
     if (auth.isAuthenticated && auth.user) {
        let recordsToUse: WorkRecord[] = [];
        if (auth.user.role === UserRole.ADMIN && adminSelectedUser && view === 'ADMIN_USER_VIEW') {
-         // Admin looking at specific user
          recordsToUse = StorageService.getRecordsByUser(adminSelectedUser.id);
          setMyRecords(recordsToUse);
        } else if (auth.user.role === UserRole.USER) {
-         // User looking at self
          recordsToUse = StorageService.getRecordsByUser(auth.user.id);
          setMyRecords(recordsToUse);
        }
 
-       // Calculate Dashboard Stats (Current Month)
        if (auth.user.role === UserRole.USER) {
          const now = new Date();
-         const monthKey = now.toISOString().slice(0, 7); // YYYY-MM
+         const monthKey = now.toISOString().slice(0, 7); 
          
          const monthRecords = recordsToUse.filter(r => r.date.startsWith(monthKey));
          const total = monthRecords.reduce((acc, r) => acc + r.calculatedValue, 0);
          
-         // Calculate daily average (Total / Unique Days Worked)
          const uniqueDays = new Set(monthRecords.map(r => r.date)).size;
          const average = uniqueDays > 0 ? total / uniqueDays : 0;
 
@@ -816,12 +817,9 @@ export default function App() {
   const handleDeleteRecord = (id: string) => {
     if (window.confirm("Tem certeza que deseja apagar este registro?")) {
       StorageService.deleteRecord(id);
-      // Refresh local state by forcing a re-run of effect or manual update
-      // Simple manual update for this demo:
       const updated = myRecords.filter(r => r.id !== id);
       setMyRecords(updated);
       
-      // Re-calc stats
       const now = new Date();
       const monthKey = now.toISOString().slice(0, 7);
       const monthRecords = updated.filter(r => r.date.startsWith(monthKey));
@@ -832,13 +830,10 @@ export default function App() {
     }
   };
 
-  // --- RENDER LOGIC ---
-
   if (!auth.isAuthenticated || !auth.user) {
     return <LoginScreen onLogin={handleLogin} />;
   }
 
-  // ADMIN VIEW
   if (auth.user.role === UserRole.ADMIN) {
     if (view === 'ADMIN_USER_VIEW' && adminSelectedUser) {
       return (
@@ -857,15 +852,13 @@ export default function App() {
     return <AdminDashboard onLogout={handleLogout} onSelectUser={(u) => { setAdminSelectedUser(u); setView('ADMIN_USER_VIEW'); }} />;
   }
 
-  // USER VIEW
   return (
     <div className="min-h-screen bg-gray-50 max-w-md mx-auto shadow-2xl overflow-hidden relative">
       
-      {/* HEADER */}
       {view !== 'NEW_RECORD' && (
         <header className="bg-white p-4 flex justify-between items-center shadow-sm sticky top-0 z-20">
           <div>
-             <h1 className="text-xl font-extrabold text-brand-600 tracking-tight">ParcelTrack</h1>
+             <h1 className="text-xl font-extrabold text-brand-600 tracking-tight">PayLoad</h1>
              <p className="text-xs text-gray-400">Olá, {auth.user.name.split(' ')[0]}</p>
           </div>
           <button onClick={handleLogout} className="p-2 bg-gray-50 rounded-full text-gray-500">
@@ -874,12 +867,10 @@ export default function App() {
         </header>
       )}
 
-      {/* CONTENT */}
       <main>
         {view === 'DASHBOARD' && (
            <div className="p-6 flex flex-col gap-4 mt-2">
               
-              {/* DASHBOARD STATS CARD */}
               <Card className="bg-gradient-to-br from-brand-600 to-brand-900 text-white border-none shadow-brand-500/20 shadow-xl mb-4">
                 <div className="flex flex-col gap-4">
                   <div>
@@ -934,7 +925,14 @@ export default function App() {
           />
         )}
       </main>
-
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
   );
 }
