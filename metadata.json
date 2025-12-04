@@ -1,0 +1,7 @@
+{
+  "name": "ParcelTrack Pro",
+  "description": "Aplicativo para cálculo e registro de ganhos por parcelas com suporte a admin e exportação.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
