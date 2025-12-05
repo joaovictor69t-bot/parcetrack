@@ -626,7 +626,7 @@ const HistoryScreen = ({
                       onClick={() => setExpandedRecord(expandedRecord === record.id ? null : record.id)}
                      >
                        <div className="flex gap-3">
-                         <div className={`w-1 self-stretch rounded-full ${record.mode === RecordMode.INDIVIDUAL ? 'bg-blue-400' : 'bg-purple-400'}`}></div>
+                         <div className={`w-1 self-stretch rounded-full ${record.mode === RecordMode.INDIVIDUAL ? 'bg-brand-500' : 'bg-purple-400'}`}></div>
                          <div>
                            <p className="font-bold text-gray-800 flex items-center gap-2">
                              {new Date(record.date).toLocaleDateString('pt-BR', {day: '2-digit', month: '2-digit'})}
